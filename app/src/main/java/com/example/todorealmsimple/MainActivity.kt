@@ -8,9 +8,7 @@ import android.view.LayoutInflater
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.todorealmsimple.model.Item
-import io.realm.Realm
-import io.realm.RealmResults
-import io.realm.Sort
+import io.realm.*
 import kotlinx.android.synthetic.main.activity_main.*
 import kotlinx.android.synthetic.main.dialog_task.view.*
 import java.util.*
@@ -18,6 +16,8 @@ import java.util.*
 class MainActivity : AppCompatActivity() {
 
     private lateinit var realm: Realm
+    private lateinit var realmAsyncTask: RealmAsyncTask
+    private lateinit var  taskList: RealmResults<Item>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,13 +50,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun readToDisplayData() {
-        val tasks: RealmResults<Item> = realm.where(Item::class.java).findAll().where().sort("timeStamp",Sort.ASCENDING).findAllAsync()
-         rv_list.adapter = TasksRecyclerAdapter(tasks)
+
+        val taskList = realm.where(Item::class.java)
+            .sort("timeStamp",Sort.ASCENDING)
+            .findAllAsync()
+
+        taskList.addChangeListener(taskListListener)
 
     }
 
+   private val taskListListener: RealmChangeListener<RealmResults<Item>> = RealmChangeListener {
+        rv_list.adapter = TasksRecyclerAdapter(it, realm)
+    }
+
     private fun saveToDatabase(task: String) {
-        realm.executeTransactionAsync ({
+       realmAsyncTask =  realm.executeTransactionAsync ({
 
             val item = it.createObject(Item::class.java, UUID.randomUUID().toString())
             item.body = task
@@ -65,8 +73,23 @@ class MainActivity : AppCompatActivity() {
             {
                 Log.d("MainActivity", "OnSuccess: Data written successfully")
             },
+
             {
                 Log.d("MainActivity", "OnError: Error in saving Data! ${it.message}")
             })
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        if (!realmAsyncTask.isCancelled) {
+            realmAsyncTask.cancel()
+        }
+
+        taskList?.let{
+            it.removeChangeListener(taskListListener)
+        }
+
+         realm.close()
     }
 }
